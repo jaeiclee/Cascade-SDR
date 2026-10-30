@@ -47,7 +47,7 @@ modules:
       build-args:
         - --share=network
     build-commands:
-      - python3 -m pip install --prefix=/app --no-cache-dir --no-warn-script-location -r backend/requirements.txt -r backend/requirements-desktop.txt 'pywebview[gtk]>=5.0'
+      - python3 -m pip install --prefix=/app --no-cache-dir --no-warn-script-location -r backend/requirements.txt -r backend/requirements-desktop.txt
       - install -d /app/share/cascade-sdr/backend /app/share/cascade-sdr/frontend/dist
       - cp -a backend/app /app/share/cascade-sdr/backend/
       - cp -a frontend/dist/. /app/share/cascade-sdr/frontend/dist/
