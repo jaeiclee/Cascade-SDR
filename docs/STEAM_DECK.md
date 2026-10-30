@@ -5,9 +5,14 @@ This guide installs the SteamOS Flatpak and adds it to Steam's Gaming Mode.
 ## Install the Flatpak
 
 1. Switch to Desktop Mode.
-2. Open the [Steam Deck Flatpak workflow](https://github.com/jaeiclee/Cascade-SDR/actions/workflows/steam-deck-flatpak.yml).
-3. Open a successful run and download the `cascade-sdr-steam-deck` artifact.
-4. Extract the artifact. Open Konsole in the extracted folder.
+2. Open the [Cascade-SDR Steam Deck preview release](https://github.com/jaeiclee/Cascade-SDR/releases/tag/steam-deck-preview-2026-10-31).
+3. Download `cascade-sdr.flatpak` and `SHA256SUMS`.
+4. Open Konsole in the download folder and verify the bundle:
+
+   ```sh
+   sha256sum -c SHA256SUMS
+   ```
+
 5. Install the bundle:
 
    ```sh
