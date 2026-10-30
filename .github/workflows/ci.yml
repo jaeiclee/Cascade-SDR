@@ -1,10 +1,8 @@
-# CI: backend test suite + a fresh-install smoke test.
+# CI: backend test suite, browser-verified picture layout, and a fresh-install smoke test.
 #
-# The smoke test builds the frontend and serves it from the backend exactly the
-# way a new user runs it (single process, http://host:8000) — asserting the
-# page, its hashed assets, the API and the WebSocket all resolve. This is the
-# class of bug that only shows up on someone else's machine (e.g. the /sdr/
-# base-path 404s), caught before it ships.
+# The browser test measures SSTV/APT graph and image panels at Steam Deck and
+# short-height viewports. The smoke test builds the frontend and serves it from
+# the backend as a new user runs it, asserting page assets, API, and WebSocket.
 
 name: CI
 
@@ -53,6 +51,12 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Install Chromium for layout regression tests
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Verify SSTV/APT layout in Chromium
+        working-directory: frontend
+        run: npm run test:layout
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
       - name: Serve the built frontend from the backend and smoke-test it

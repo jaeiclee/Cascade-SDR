@@ -57,6 +57,7 @@ const wavRec = new WavRecorder(48000);
 const adsbMap = new AdsbMap();
 
 const fftView = document.getElementById("fft-view")!;
+const display = document.querySelector<HTMLElement>(".display")!;
 const mapDiv = document.getElementById("map")!;
 const adsbControls = document.getElementById("adsb-controls")!;
 const adsbStatus = document.getElementById("adsb-status")!;
@@ -820,6 +821,7 @@ function showView(mode: string): void {
   // The picture modes keep a strip of waterfall above the image; the backend
   // streams it there anyway (they're radio modes underneath).
   const isPicture = isApt || isSstv;
+  display.classList.toggle("picture-mode", isPicture);
   fftView.hidden = !isFft && !isPicture;
   fftView.classList.toggle("compact", isPicture);
   mapDiv.hidden = !isMap;
