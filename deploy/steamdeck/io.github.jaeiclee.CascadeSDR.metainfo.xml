@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.jaeiclee.CascadeSDR</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Cascade SDR</name>
+  <summary>Receive and decode radio signals with an RTL-SDR</summary>
+  <description>
+    <p>Cascade SDR receives signals from an RTL-SDR and decodes SSTV images.</p>
+  </description>
+  <launchable type="desktop-id">io.github.jaeiclee.CascadeSDR.desktop</launchable>
+  <url type="homepage">https://github.com/jaeiclee/Cascade-SDR</url>
+  <content_rating type="oars-1.1"/>
+</component>

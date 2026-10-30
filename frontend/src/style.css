@@ -834,3 +834,14 @@ details.vfo-box[open] > summary::before { content: "▾ "; }
 .replay-time { margin: 0; font-variant-numeric: tabular-nums; color: var(--muted, #8b949e); font-size: 0.85em; }
 .replay-buttons { display: flex; gap: 0.3rem; }
 .replay-buttons button { flex: 1 1 0; padding-left: 0; padding-right: 0; }
+
+body.steam-deck { --sidebar-w: 320px; }
+body.steam-deck button { min-height: 44px; font-size: 0.95rem; }
+body.steam-deck .mode-row { gap: 0.45rem; }
+body.steam-deck .modes button { min-height: 48px; padding: 0.6rem; }
+body.steam-deck .group { gap: 0.65rem; padding: 0.9rem; }
+body.steam-deck .group label { font-size: 0.9rem; }
+body.steam-deck .group input:not([type="range"]),
+body.steam-deck .group select { min-height: 48px; font-size: 1rem; }
+body.steam-deck .group label.check input { min-width: 22px; min-height: 22px; }
+body.steam-deck .control-bar input[type="range"] { min-height: 44px; width: 140px; }

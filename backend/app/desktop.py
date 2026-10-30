@@ -17,6 +17,7 @@ with ``pip install -r requirements-desktop.txt``. The plain browser/server run
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -26,6 +27,7 @@ from urllib.request import urlopen
 import uvicorn
 
 from app.main import app
+from app.launch_profile import build_start_url, parse_launch_profile
 
 HOST = "127.0.0.1"
 PORT = 8000
@@ -51,6 +53,8 @@ def _wait_until_up(timeout: float = 15.0) -> bool:
 def main() -> None:
     import webview  # imported here so the server-only install doesn't need it
 
+    profile = parse_launch_profile(os.environ.get("CASCADE_LAUNCH_PROFILE"))
+
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if not dist.is_dir():
         raise SystemExit(
@@ -64,7 +68,12 @@ def main() -> None:
         raise SystemExit("backend did not start in time")
 
     webview.create_window(
-        "Cascade SDR", URL, width=1280, height=820, min_size=(960, 640)
+        "Cascade SDR",
+        build_start_url(URL, profile),
+        width=1280,
+        height=820,
+        min_size=(960, 640),
+        fullscreen=profile == "steam-deck-iss",
     )
     # pywebview defaults to private mode, which wipes the web view's localStorage
     # on every launch — losing the user's bookmarks, receiver position, and other

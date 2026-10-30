@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Cascade SDR
+Comment=Receive and decode signals with an RTL-SDR
+Exec=cascade-sdr
+Icon=io.github.jaeiclee.CascadeSDR
+Terminal=false
+Type=Application
+Categories=AudioVideo;Education;Utility;
+StartupNotify=true

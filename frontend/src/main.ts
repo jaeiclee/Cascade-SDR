@@ -28,11 +28,15 @@ import { WavRecorder, downloadBlob } from "./recorder";
 import { AptImage } from "./aptimage";
 import { SstvImage } from "./sstvimage";
 import { esc } from "./html";
+import { resolveLaunchProfile, shouldAutoStartSstv } from "./launch-profile.js";
 
 // Path prefix the app is served under ("/" direct, "/sdr/" behind a proxy) —
 // runtime-derived so the same build works in both places.
 const BASE = appBase();
 const sock = new SdrSocket();
+const launchProfile = resolveLaunchProfile(location.search);
+if (launchProfile.kind === "steam-deck-iss") document.body.classList.add("steam-deck");
+let steamDeckStartRequested = false;
 const waterfall = new Waterfall(
   document.getElementById("waterfall") as HTMLCanvasElement,
 );
@@ -386,6 +390,15 @@ sock.onJson((msg) => {
       break;
     case "status":
       currentMode = msg.mode;
+      if (launchProfile.kind === "steam-deck-iss" && !steamDeckStartRequested) {
+        steamDeckStartRequested = true;
+        if (shouldAutoStartSstv(launchProfile, msg.mode)) {
+          sstvFreq.value = String(launchProfile.frequencyHz);
+          document
+            .querySelector<HTMLButtonElement>(`#mode-tabs button[data-mode="${launchProfile.mode}"]`)
+            ?.click();
+        }
+      }
       viewCenter = msg.center_freq;
       viewRate = msg.sample_rate;
       // HF-mode state feeds updateBandInfo, so sync it before rendering
