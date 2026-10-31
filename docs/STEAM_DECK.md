@@ -5,7 +5,7 @@ This guide installs the SteamOS Flatpak and adds it to Steam's Gaming Mode.
 ## Install the Flatpak
 
 1. Switch to Desktop Mode.
-2. Open the [Cascade-SDR Steam Deck preview release](https://github.com/jaeiclee/Cascade-SDR/releases/tag/steam-deck-preview-2026-10-31-r2).
+2. Open the [Cascade-SDR Steam Deck preview release](https://github.com/jaeiclee/Cascade-SDR/releases/tag/steam-deck-preview-2026-10-31-r3).
 3. Download `cascade-sdr.flatpak` and `SHA256SUMS`.
 4. Open Konsole in the download folder and verify the bundle:
 
@@ -34,6 +34,8 @@ This guide installs the SteamOS Flatpak and adds it to Steam's Gaming Mode.
 5. Return to Gaming Mode and start Cascade SDR from the library.
 
 The app opens fullscreen, selects SSTV, and starts on its ISS 70 cm preset at 437.550 MHz. Check the current ARISS event announcement before a pass. Use the frequency menu if the event specifies a different downlink.
+
+In SSTV mode, tune frequency, adjust gain, and toggle decoding from the live toolbar. Capture reviews save the IQ file, decoded image rows received during the capture, measured carrier-offset samples, and reception metadata for replay. Stop and save the review before changing reception settings or switching modes.
 
 ## USB access and limits
 

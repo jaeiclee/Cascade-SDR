@@ -19,6 +19,13 @@ from fastapi.staticfiles import StaticFiles
 
 from fastapi import HTTPException
 
+from app.capture_sessions import (
+    CaptureSessionConflict,
+    CaptureSessionError,
+    ReceptionSessionRequest,
+    list_sessions,
+    save_session,
+)
 from app.device import RECORDINGS_DIR, DeviceManager
 from app.hub import Hub
 from app.modes.adsb import AdsbMode
@@ -93,6 +100,21 @@ async def api_recordings() -> dict:
     return {"recordings": items, "recording": manager.recording}
 
 
+@app.get("/api/sessions")
+async def api_sessions() -> dict:
+    return {"sessions": list_sessions(RECORDINGS_DIR)}
+
+
+@app.post("/api/sessions")
+async def create_session(request: ReceptionSessionRequest) -> dict:
+    try:
+        return {"session": save_session(RECORDINGS_DIR, request)}
+    except CaptureSessionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CaptureSessionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.delete("/api/recordings/{name}")
 async def delete_recording(name: str) -> dict:
     # Only a recording the listing above shows can go, found by name among
@@ -102,6 +124,8 @@ async def delete_recording(name: str) -> dict:
     if target is None:
         raise HTTPException(status_code=400, detail="bad name")
     target.unlink(missing_ok=True)
+    (RECORDINGS_DIR / f"{target.stem}.session.json").unlink(missing_ok=True)
+    (RECORDINGS_DIR / f"{target.stem}.sstv.png").unlink(missing_ok=True)
     return {"ok": True}
 
 

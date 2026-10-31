@@ -41,8 +41,8 @@ export class SstvImage {
     this.redraw();
   }
 
-  pushRow(rgb: Uint8Array): void {
-    if (!this.iw || this.rows >= this.ih) return;
+  pushRow(rgb: Uint8Array): boolean {
+    if (!this.iw || this.rows >= this.ih) return false;
     const img = this.octx.createImageData(this.iw, 1);
     for (let x = 0; x < this.iw; x++) {
       const s = x * 3;
@@ -55,6 +55,7 @@ export class SstvImage {
     this.octx.putImageData(img, 0, this.rows);
     this.rows++;
     this.redraw();
+    return true;
   }
 
   // Fit the whole image into the visible canvas, preserving aspect, centered.

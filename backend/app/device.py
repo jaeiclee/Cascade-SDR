@@ -260,6 +260,8 @@ class DeviceManager:
             raise ValueError(f"unknown mode: {name}")
         self._loop = asyncio.get_running_loop()
         async with self._lock:
+            if self.recording:
+                raise ValueError("Stop IQ recording before changing modes.")
             prev = self.mode
             await self._stop_locked()
             self.mode_name = name
@@ -295,6 +297,8 @@ class DeviceManager:
 
     async def stop(self) -> None:
         async with self._lock:
+            if self.recording:
+                raise ValueError("Stop IQ recording before stopping the receiver.")
             await self._stop_locked()
             await self._announce()
 
@@ -309,6 +313,14 @@ class DeviceManager:
                      tuner_bw: float | None = None,
                      rtl_agc: bool | None = None) -> None:
         """Update radio settings. The worker applies them between read blocks."""
+        if self.recording and (
+            (center_freq is not None and float(center_freq) != self.center_freq)
+            or (sample_rate is not None and float(sample_rate) != self.sample_rate)
+            or (converter_on is not None and bool(converter_on) != self.converter_on)
+            or (converter_hz is not None and float(converter_hz) != self.converter_hz)
+            or (direct_sampling is not None and bool(direct_sampling) != self.direct_sampling)
+        ):
+            raise ValueError("Stop IQ recording before changing frequency, sample rate, or RF path.")
         if converter_hz is not None and float(converter_hz) > 0:
             self.converter_hz = float(converter_hz)
         if converter_on is not None:

@@ -27,6 +27,8 @@ import { antennaText } from "./antenna";
 import { WavRecorder, downloadBlob } from "./recorder";
 import { AptImage } from "./aptimage";
 import { SstvImage } from "./sstvimage";
+import { addDopplerSample, createCaptureDraft, finalizeCaptureDraft } from "./capture-session.js";
+import type { CaptureDraft, CaptureMetadata, CapturePayload } from "./capture-session.js";
 import { esc } from "./html";
 import { resolveLaunchProfile, shouldAutoStartSstv } from "./launch-profile.js";
 
@@ -179,11 +181,11 @@ const freqLabel = document.getElementById("freq-label")!;
 // place so clicking and typing always agree.
 function syncFreqField(): void {
   if (document.activeElement === freqInput) return; // don't clobber mid-edit
-  const radio = currentMode === "radio";
-  freqLabel.textContent = radio ? "Frequency (MHz)" : "Center (MHz)";
+  const tunedChannel = currentMode === "radio" || currentMode === "sstv";
+  freqLabel.textContent = tunedChannel ? "Frequency (MHz)" : "Center (MHz)";
   // Round to 10 Hz and trim trailing zeros: a pixel click maps to an exact
   // fractional frequency, which otherwise shows as "118.20640677966101".
-  const mhz = (radio ? viewTuned : viewCenter) / 1e6;
+  const mhz = (tunedChannel ? viewTuned : viewCenter) / 1e6;
   freqInput.value = (+mhz.toFixed(5)).toString();
 }
 const rateInput = document.getElementById("rate") as HTMLInputElement;
@@ -246,6 +248,12 @@ const controlBar = document.getElementById("control-bar")!;
 const cbFreq = document.getElementById("cb-freq")!;
 const cbStep = document.getElementById("cb-step")!;
 const cbDemod = document.getElementById("cb-demod")!;
+const cbDecode = document.getElementById("cb-decode")!;
+const cbSession = document.getElementById("cb-session")!;
+const captureReviewButton = document.getElementById("capture-review") as HTMLButtonElement;
+const replayLatestButton = document.getElementById("replay-latest") as HTMLButtonElement;
+const captureReviewStatus = document.getElementById("capture-review-status")!;
+const sessionReviewList = document.getElementById("session-review-list")!;
 // The contact panel floats over the map's corner, so it needs to know how much
 // room the control bar takes above the map (it wraps to more rows when narrow).
 new ResizeObserver(() => {
@@ -323,7 +331,7 @@ function updateBandInfo(): void {
   } else if (currentMode === "apt") {
     label = "NOAA APT · 137 MHz (weather sat)";
   } else if (currentMode === "sstv") {
-    label = `SSTV · ${(parseFloat(sstvFreq.value) / 1e6).toFixed(3)} MHz (slow-scan TV)`;
+    label = `SSTV · ${(viewTuned / 1e6).toFixed(3)} MHz (slow-scan TV)`;
   } else if (currentMode === "pager") {
     label = "Pager · POCSAG/FLEX";
   } else if (currentMode === "satellite") {
@@ -350,11 +358,16 @@ function updateBandInfo(): void {
   // mirror the service name onto the spectrum's noise floor (drop "Band: ")
   scope.setBandLabel(label.replace(/^Band:\s*/, ""));
   const fMHz =
-    (currentMode === "radio" || currentMode === "replay" ? viewTuned : viewCenter) / 1e6;
+    (currentMode === "radio" || currentMode === "replay" || currentMode === "sstv" ? viewTuned : viewCenter) / 1e6;
   antennaInfo.textContent = antennaText(fMHz);
 }
 
 let currentMode = "idle";
+let captureDraft: CaptureDraft | null = null;
+let captureHasImageRows = false;
+let captureActionPending = false;
+let pendingCapturePayload: CapturePayload | null = null;
+let sstvBandwidthHz = 12_500;
 
 // RDS program-type names (EU RDS table, 0..31)
 const PTY = [
@@ -395,6 +408,8 @@ sock.onJson((msg) => {
         steamDeckStartRequested = true;
         if (shouldAutoStartSstv(launchProfile, msg.mode)) {
           sstvFreq.value = String(launchProfile.frequencyHz);
+          stepSel.value = "1000";
+          applyStepAttr();
           document
             .querySelector<HTMLButtonElement>(`#mode-tabs button[data-mode="${launchProfile.mode}"]`)
             ?.click();
@@ -428,6 +443,7 @@ sock.onJson((msg) => {
       tuner.setActive(msg.mode === "radio" || msg.mode === "replay" || tuner.labelTuned);
       radioControls.hidden = !(msg.mode === "radio" || msg.mode === "replay");
       replayControls.hidden = msg.mode !== "replay";
+      if (msg.mode === "replay") renderSessionReviews();
       scanControls.hidden = msg.mode !== "scan";
       scannerControls.hidden = msg.mode !== "scanner";
       adsbControls.hidden = msg.mode !== "adsb";
@@ -455,18 +471,22 @@ sock.onJson((msg) => {
       // old sidebar rules — audio controls for the listening modes, frequency
       // for free-tune modes, gain whenever the dongle is in use.
       {
-        const audio = msg.mode === "radio" || msg.mode === "replay";
+        const audioMode = msg.mode === "radio" || msg.mode === "replay";
+        const sstvLive = msg.mode === "sstv";
         controlBar.hidden = msg.mode === "idle";
-        cbFreq.hidden = !["spectrum", "radio"].includes(msg.mode);
-        cbStep.hidden = !["spectrum", "radio", "replay"].includes(msg.mode);
-        cbDemod.hidden = !audio;
+        cbFreq.hidden = !["spectrum", "radio", "sstv"].includes(msg.mode);
+        cbStep.hidden = !["spectrum", "radio", "replay", "sstv"].includes(msg.mode);
+        cbDemod.hidden = !audioMode;
+        cbDecode.hidden = !audioMode;
+        cbSession.hidden = !(sstvLive || (msg.mode === "radio" && sstvDecode.checked));
         // SSTV plays the channel too: without a squelch it hisses between
-        // transmissions. (The squelch only gates the audio, not the decoder.)
-        const monitor = audio || msg.mode === "sstv";
+        // transmissions. The squelch only gates the audio, not the decoder.
+        const monitor = audioMode || sstvLive;
         cbVol.hidden = !monitor;
         cbSql.hidden = !monitor;
         cbMeter.hidden = !monitor;
       }
+      syncCaptureAction();
       showView(msg.mode);
       break;
     case "spectrum_config":
@@ -535,6 +555,9 @@ sock.onJson((msg) => {
       renderReplayList();
       break;
     case "radio_level":
+      if (captureDraft) {
+        captureDraft = addDopplerSample(captureDraft, msg.afc ?? null, performance.now());
+      }
       if (msg.afc) {
         const hz = viewTuned + msg.afc.hz;     // the channel, in any mode
         const off = `${msg.afc.hz >= 0 ? "+" : "−"}${Math.abs(msg.afc.hz / 1000).toFixed(1)} kHz`;
@@ -625,6 +648,7 @@ sock.onJson((msg) => {
       acarsCount.textContent = `${msg.count} messages`;
       break;
     case "sstv_start":
+      if (captureDraft) captureHasImageRows = false;
       sstvImage.start(msg.mode, msg.width, msg.height);
       sstvRowCount = 0;
       sstvBy = msg.by === "sync" ? " · header missed, started from its syncs" : "";
@@ -699,21 +723,45 @@ sock.onJson((msg) => {
     case "rec_status":
       iqRecording = msg.recording;
       recIqBtn.textContent = iqRecording ? "■ Stop IQ recording" : "● Record IQ";
+      if (captureActionPending && iqRecording) {
+        captureActionPending = false;
+        captureReviewStatus.textContent = "Recording IQ and measured carrier offset. Stop & save before changing reception settings or mode.";
+      } else if (!iqRecording && captureDraft && msg.stopped) {
+        pendingCapturePayload = finalizeCaptureDraft(
+          captureDraft,
+          { name: msg.stopped, dropped: msg.dropped, lost_pct: msg.lost_pct },
+          new Date(),
+          captureHasImageRows ? sstvImage.toPng() : null,
+        );
+        pendingCapturePayload.sstv_mode = captureHasImageRows ? sstvImage.modeLabel() || null : null;
+        captureDraft = null;
+        captureActionPending = false;
+        void savePendingCapture();
+      } else if (captureActionPending && !iqRecording && captureDraft) {
+        captureDraft = null;
+        captureActionPending = false;
+        captureReviewStatus.textContent = msg.message || "IQ recording did not start.";
+      }
       if (msg.message) recIqStatus.textContent = msg.message;
       else if (iqRecording) recIqStatus.textContent = "● recording IQ…";
       else if (msg.stopped) {
-        // A capture that lost blocks still looks like a good file, so say it
-        // plainly: the samples either side of a gap don't join up.
         recIqStatus.textContent = msg.dropped
           ? `saved ${msg.stopped} — ⚠ lost ${msg.dropped} blocks (${msg.lost_pct}%), the writer fell behind`
           : `saved ${msg.stopped}`;
         recIqStatus.classList.toggle("err", !!msg.dropped);
       } else recIqStatus.textContent = "";
+      syncCaptureAction();
       refreshRecordings();
       break;
     case "error":
       statusLine.textContent = `⚠ ${msg.message}`;
       statusLine.classList.add("err");
+      if (captureActionPending) {
+        captureActionPending = false;
+        if (!iqRecording) captureDraft = null;
+        captureReviewStatus.textContent = `Capture failed: ${msg.message}`;
+        syncCaptureAction();
+      }
       break;
   }
 });
@@ -728,7 +776,8 @@ sock.onBinary((tag, body) => {
     aptLineCount++;
     aptStatus.textContent = `▶ decoding · ${aptLineCount} lines`;
   } else if (tag === FrameTag.SSTV) {
-    sstvImage.pushRow(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+    const added = sstvImage.pushRow(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+    if (captureDraft && added) captureHasImageRows = true;
     sstvRowCount++;
     const label = sstvImage.modeLabel();
     sstvStatus.textContent = `▶ ${label} · ${sstvRowCount} rows${sstvBy}`;
@@ -1960,6 +2009,10 @@ function tuneFromField(): void {
     listenAt(hz);                    // DC-spike-free: channel off-centre
     return;
   }
+  if (currentMode === "sstv") {
+    tuneSstvAt(hz);
+    return;
+  }
   sock.send({ cmd: "tune", center_freq: hz });
   // In the Spectrum view, typing a frequency should both re-center AND listen to
   // it (the channel follows the centre), so the tuned cursor doesn't get left
@@ -2037,6 +2090,7 @@ sstvDecode.addEventListener("change", () => {
   }
   sock.send({ cmd: "config", params: { sstv: sstvDecode.checked } });
   updateSstvPanel(currentMode);
+  syncCaptureAction();
   showView(currentMode);
   persist();
 });
@@ -2077,24 +2131,37 @@ replayApt.addEventListener("change", () => {
 // so the dongle's DC spike never sits in the channel — against a weak pass it
 // would capture the FM demodulator. SSTV mode always runs at 2.4 MS/s.
 const SSTV_CENTER_OFFSET_HZ = 600e3;
-function sendSstvFreq(): void {
-  const hz = parseFloat(sstvFreq.value);
-  const bw = parseFloat(sstvFreq.selectedOptions[0]?.dataset.bw || "12500");
-  sock.send({ cmd: "tune", center_freq: hz + SSTV_CENTER_OFFSET_HZ });
-  sock.send({
-    cmd: "config",
-    params: {
-      tuned_freq: hz, bandwidth: bw,
-      volume: parseFloat(volInput.value), squelch: parseFloat(sqlInput.value),
-    },
-  });
-}
-sstvFreq.addEventListener("change", () => {
+function tuneSstvAt(hz: number): void {
+  if (!Number.isFinite(hz)) return;
+  if (Math.abs(parseFloat(sstvFreq.value) - hz) > 1) sstvFreq.value = "";
   sstvImage.clear();
   sstvRowCount = 0;
   sstvStatus.textContent = "waiting for a transmission…";
-  sendSstvFreq();
+  const center = hz + SSTV_CENTER_OFFSET_HZ;
+  sock.send({ cmd: "tune", center_freq: center });
+  sock.send({
+    cmd: "config",
+    params: {
+      tuned_freq: hz, bandwidth: sstvBandwidthHz,
+      volume: parseFloat(volInput.value), squelch: parseFloat(sqlInput.value),
+    },
+  });
+  viewCenter = center;
+  viewTuned = hz;
+  tuner.setBand(center, viewRate);
+  tuner.setTuned(hz);
+  syncFreqField();
   updateBandInfo();
+}
+function sendSstvFreq(): void {
+  const hz = parseFloat(sstvFreq.value);
+  const bw = parseFloat(sstvFreq.selectedOptions[0]?.dataset.bw || "");
+  if (!Number.isFinite(hz)) return;
+  if (Number.isFinite(bw)) sstvBandwidthHz = bw;
+  tuneSstvAt(hz);
+}
+sstvFreq.addEventListener("change", () => {
+  sendSstvFreq();
   persist();
 });
 document.getElementById("sstv-save")!.addEventListener("click", () => {
@@ -2437,14 +2504,128 @@ const recIqStatus = document.getElementById("rec-iq-status")!;
 const recList = document.getElementById("rec-list")!;
 let iqRecording = false;
 
+const recordingLockedControls = [
+  "#mode-tabs", "#freq-directory", "#bookmarks", "#overlay", "#freq", "#rate",
+  "#sstv-freq", "#replay-latest", "#hf-mode", "#upconv-mhz", "#block-prev", "#block-next",
+].join(", ");
+const reviewLockedControls = [
+  "#gain", "#gain-auto", "#demod", "#bw", "#sstv-decode", "#sstv-clear",
+  "#ppm", "#tuner-bw", "#rtl-agc", "#bias-tee",
+].join(", ");
+
+for (const eventName of ["pointerdown", "click", "keydown", "wheel", "input", "change"]) {
+  document.addEventListener(eventName, (event) => {
+    if ((!iqRecording && !captureDraft) || !(event.target instanceof Element)) return;
+    if (event instanceof KeyboardEvent && event.key === "Tab") return;
+    const locked = event.target.closest(recordingLockedControls)
+      || (captureDraft && event.target.closest(reviewLockedControls));
+    if (!locked) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (captureDraft) {
+      captureReviewStatus.textContent = "Stop & save the review before changing reception settings or mode.";
+    } else {
+      recIqStatus.textContent = "Stop IQ recording before changing frequency, sample rate, or mode.";
+    }
+  }, { capture: true, passive: false });
+}
+
+function currentCaptureMetadata(): CaptureMetadata {
+  const demod = currentMode === "sstv" ? "nfm" : demodSel.value as CaptureMetadata["demod"];
+  return {
+    center_freq_hz: Math.round(viewCenter),
+    tuned_freq_hz: Math.round(viewTuned),
+    sample_rate_sps: Math.round(viewRate),
+    bandwidth_hz: Math.max(1, Math.round(currentMode === "sstv" ? sstvBandwidthHz : parseFloat(bwInput.value) * 1_000)),
+    demod,
+    gain_db: gainAuto.checked ? "auto" : desiredGainDb,
+    sstv_mode: null,
+  };
+}
+
+function syncCaptureAction(): void {
+  const canCapture = currentMode === "sstv" || (currentMode === "radio" && sstvDecode.checked);
+  cbSession.hidden = !canCapture && !pendingCapturePayload;
+  captureReviewButton.textContent = pendingCapturePayload
+    ? "Retry review save"
+    : captureDraft ? "Stop & save review" : "Capture review";
+  captureReviewButton.disabled = captureActionPending
+    || (!pendingCapturePayload && !captureDraft && (!canCapture || iqRecording));
+  recIqBtn.disabled = captureActionPending || Boolean(captureDraft);
+}
+
+async function savePendingCapture(): Promise<void> {
+  if (!pendingCapturePayload || captureActionPending) return;
+  captureActionPending = true;
+  syncCaptureAction();
+  captureReviewStatus.classList.remove("err");
+  captureReviewStatus.textContent = "Saving reception review…";
+  try {
+    const response = await fetch(`${BASE}api/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pendingCapturePayload),
+    });
+    if (!response.ok) throw new Error(`server returned ${response.status}`);
+    const result = await response.json();
+    pendingCapturePayload = null;
+    captureReviewStatus.textContent = `Review saved for ${result.session.recording_name}`;
+    await refreshRecordings();
+    await renderSessionReviews();
+  } catch (err) {
+    captureReviewStatus.classList.add("err");
+    captureReviewStatus.textContent = `Review save failed. IQ is saved. Tap Retry review save. ${(err as Error).message}`;
+  }
+  captureActionPending = false;
+  syncCaptureAction();
+}
+
+captureReviewButton.addEventListener("click", async () => {
+  if (pendingCapturePayload) {
+    await savePendingCapture();
+    return;
+  }
+  if (captureActionPending) return;
+  if (captureDraft) {
+    captureActionPending = true;
+    captureReviewStatus.textContent = "Stopping IQ capture…";
+    syncCaptureAction();
+    sock.send({ cmd: "record", action: "stop" });
+    return;
+  }
+  if (iqRecording) {
+    captureReviewStatus.textContent = "Stop the current IQ recording before starting a review.";
+    return;
+  }
+  captureHasImageRows = false;
+  captureDraft = createCaptureDraft(currentCaptureMetadata(), new Date(), performance.now());
+  captureActionPending = true;
+  captureReviewStatus.textContent = "Starting IQ capture and Doppler trace…";
+  syncCaptureAction();
+  sock.send({ cmd: "record", action: "start" });
+});
+
 recIqBtn.addEventListener("click", () => {
+  if (captureActionPending) return;
+  if (captureDraft) {
+    captureActionPending = true;
+    syncCaptureAction();
+    sock.send({ cmd: "record", action: "stop" });
+    return;
+  }
   sock.send({ cmd: "record", action: iqRecording ? "stop" : "start" });
 });
 
 async function refreshRecordings(): Promise<void> {
   try {
-    const d = await (await fetch(`${BASE}api/recordings`)).json();
+    const response = await fetch(`${BASE}api/recordings`);
+    const d = await response.json();
     const list: any[] = d.recordings || [];
+    if (typeof d.recording === "boolean") {
+      iqRecording = d.recording;
+      recIqBtn.textContent = iqRecording ? "■ Stop IQ recording" : "● Record IQ";
+      syncCaptureAction();
+    }
     recList.innerHTML = list
       .map(
         (it) =>
@@ -2464,9 +2645,173 @@ recList.addEventListener("click", async (e) => {
   if (!btn) return;
   await fetch(`${BASE}api/recordings/${btn.dataset.name}`, { method: "DELETE" });
   refreshRecordings();
+  renderSessionReviews();
 });
 
 refreshRecordings();
+
+type ReceptionSessionSummary = {
+  id: string;
+  recording_name: string;
+  recording_size_bytes: number;
+  started_at: string;
+  ended_at: string;
+  center_freq_hz: number;
+  tuned_freq_hz: number;
+  sample_rate_sps: number;
+  bandwidth_hz: number;
+  demod: string;
+  gain_db: number | "auto" | null;
+  sstv_mode: string | null;
+  dropped_blocks: number;
+  lost_pct: number;
+  image_name: string | null;
+  doppler_samples: { elapsed_s: number; offset_hz: number | null; locked: boolean }[];
+};
+
+async function openReplay(recordingName: string, session?: ReceptionSessionSummary): Promise<void> {
+  await audio.init();
+  if (session) sstvDecode.checked = true;
+  sock.send({ cmd: "set_mode", mode: "replay" });
+  sock.send({
+    cmd: "config",
+    params: {
+      file: recordingName,
+      playing: true,
+      ...(session ? {
+        sstv: true,
+        demod: session.demod,
+        tuned_freq: session.tuned_freq_hz,
+        bandwidth: session.bandwidth_hz,
+      } : {}),
+    },
+  });
+}
+
+function makeSessionCard(session: ReceptionSessionSummary): HTMLElement {
+  const card = document.createElement("article");
+  card.className = "session-card";
+  const title = document.createElement("strong");
+  title.textContent = `${(session.tuned_freq_hz / 1e6).toFixed(4)} MHz · ${session.sstv_mode || "SSTV"}`;
+  const duration = Math.max(0, (Date.parse(session.ended_at) - Date.parse(session.started_at)) / 1_000);
+  const summary = document.createElement("p");
+  summary.className = "muted";
+  summary.textContent = `${new Date(session.started_at).toLocaleString()} · ${Math.floor(duration / 60)}m ${Math.round(duration % 60)}s`;
+  card.append(title, summary);
+
+  const locked = session.doppler_samples.filter(
+    (sample) => sample.locked && typeof sample.offset_hz === "number",
+  );
+  const tracking = document.createElement("p");
+  tracking.className = "session-tracking";
+  if (locked.length) {
+    const offsets = locked.map((sample) => sample.offset_hz as number);
+    const min = Math.min(...offsets);
+    const max = Math.max(...offsets);
+    tracking.textContent = `${locked.length} locked samples · measured carrier offset ${min.toFixed(0)} to ${max.toFixed(0)} Hz`;
+    if (locked.length) {
+      const width = 240;
+      const height = 64;
+      const span = Math.max(1, max - min);
+      const timeSpan = Math.max(1, duration);
+      const graph = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      graph.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      graph.setAttribute("role", "img");
+      graph.setAttribute("aria-label", "Measured carrier-offset samples over capture time");
+      graph.classList.add("session-trace");
+      for (const sample of locked) {
+        const point = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        const x = 4 + (Math.min(timeSpan, sample.elapsed_s) / timeSpan) * (width - 8);
+        const y = height - 4 - (((sample.offset_hz as number) - min) / span) * (height - 8);
+        point.setAttribute("cx", x.toFixed(1));
+        point.setAttribute("cy", y.toFixed(1));
+        point.setAttribute("r", "2.5");
+        graph.append(point);
+      }
+      card.append(graph);
+    }
+  } else {
+    tracking.textContent = "No carrier lock samples during capture.";
+  }
+  card.append(tracking);
+
+  const details = document.createElement("details");
+  const detailsLabel = document.createElement("summary");
+  detailsLabel.textContent = "Reception details";
+  const detailText = document.createElement("p");
+  const gain = session.gain_db === "auto" || session.gain_db === null ? String(session.gain_db) : `${session.gain_db} dB`;
+  detailText.textContent = `Center ${(session.center_freq_hz / 1e6).toFixed(4)} MHz · ${session.sample_rate_sps.toLocaleString()} samples/s · ${session.bandwidth_hz.toLocaleString()} Hz · ${session.demod.toUpperCase()} · gain ${gain} · ${session.dropped_blocks} dropped blocks (${session.lost_pct}%)`;
+  details.append(detailsLabel, detailText);
+  card.append(details);
+
+  const actions = document.createElement("div");
+  actions.className = "session-actions";
+  const replay = document.createElement("button");
+  replay.type = "button";
+  replay.textContent = "Replay IQ";
+  replay.addEventListener("click", () => { void openReplay(session.recording_name, session); });
+  actions.append(replay);
+  for (const [name, label] of [
+    [session.recording_name, "Download IQ"],
+    [`${session.id}.session.json`, "Download metadata"],
+    ...(session.image_name ? [[session.image_name, "Open decoded image"]] : []),
+  ] as [string, string][]) {
+    const link = document.createElement("a");
+    link.href = `${BASE}recordings/${encodeURIComponent(name)}`;
+    link.textContent = label;
+    if (name === session.image_name) link.target = "_blank";
+    actions.append(link);
+  }
+  card.append(actions);
+
+  if (session.image_name) {
+    const image = document.createElement("img");
+    image.className = "session-image";
+    image.src = `${BASE}recordings/${encodeURIComponent(session.image_name)}`;
+    image.alt = `Decoded ${session.sstv_mode || "SSTV"} image`;
+    card.append(image);
+  }
+  return card;
+}
+
+async function renderSessionReviews(): Promise<void> {
+  try {
+    const response = await fetch(`${BASE}api/sessions`);
+    if (!response.ok) return;
+    const data = await response.json();
+    const sessions: ReceptionSessionSummary[] = data.sessions || [];
+    sessionReviewList.replaceChildren();
+    if (!sessions.length) {
+      const empty = document.createElement("p");
+      empty.className = "bm-empty";
+      empty.textContent = "No reception reviews saved yet.";
+      sessionReviewList.append(empty);
+      return;
+    }
+    for (const session of sessions) sessionReviewList.append(makeSessionCard(session));
+  } catch {
+    /* offline */
+  }
+}
+
+replayLatestButton.addEventListener("click", async () => {
+  try {
+    const sessionResponse = await fetch(`${BASE}api/sessions`);
+    const sessions: ReceptionSessionSummary[] = (await sessionResponse.json()).sessions || [];
+    if (sessions.length) {
+      await openReplay(sessions[0].recording_name, sessions[0]);
+      return;
+    }
+    const recordingResponse = await fetch(`${BASE}api/recordings`);
+    const recordings = (await recordingResponse.json()).recordings || [];
+    if (recordings.length) await openReplay(recordings[0].name);
+    else captureReviewStatus.textContent = "No IQ recordings are available yet.";
+  } catch {
+    captureReviewStatus.textContent = "Could not load saved recordings.";
+  }
+});
+
+renderSessionReviews();
 
 // --- Replay (play a saved .cu8 back through the spectrum view) ------------
 async function renderReplayList(): Promise<void> {

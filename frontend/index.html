@@ -265,11 +265,12 @@
 
         <section class="group" id="sstv-controls" hidden>
           <h2>SSTV (image)</h2>
-          <label class="sstv-mode-only">Frequency
+          <label class="sstv-mode-only">Channel
             <select id="sstv-freq">
-              <option value="144500000" data-bw="12500">2 m calling · 144.500</option>
+              <option value="144500000" data-bw="12500" selected>2 m calling · 144.500</option>
               <option value="437550000" data-bw="36000">ISS 70 cm · 437.550</option>
               <option value="145800000" data-bw="22000">ISS 2 m · 145.800</option>
+              <option value="">Custom frequency</option>
             </select>
           </label>
           <p id="sstv-status" class="status-line">waiting for a transmission…</p>
@@ -350,6 +351,8 @@
           </div>
           <label class="check"><input id="replay-apt" type="checkbox" /> Decode as APT image (137 MHz pass)</label>
           <div id="replay-list" class="bm-list"></div>
+          <h3>Reception reviews</h3>
+          <div id="session-review-list" class="session-review-list"></div>
           <p class="hint">Plays a saved <b>.cu8</b> capture through the spectrum +
             demodulators — click a signal to listen. Loops automatically.</p>
         </section>
@@ -365,7 +368,6 @@
           </label>
           <label class="check"><input id="stereo-on" type="checkbox" /> FM stereo</label>
           <label class="check"><input id="rds-on" type="checkbox" /> RDS (FM station info)</label>
-          <label class="check"><input id="sstv-decode" type="checkbox" /> Decode SSTV image</label>
           <label class="check"><input id="nb-on" type="checkbox" /> Noise blanker (impulse noise)</label>
           <label class="check"><input id="notch-on" type="checkbox" /> Notch
             <input id="notch-hz" type="number" min="50" max="20000" step="10" value="1000" class="inline-num" /> Hz
@@ -490,7 +492,12 @@
         <section class="group" id="recording-controls" hidden>
           <h2>Recording</h2>
           <button id="rec-iq">● Record IQ</button>
+          <div class="cb-item" id="cb-session" hidden>
+            <button id="capture-review" type="button">Capture review</button>
+          </div>
+          <button id="replay-latest" type="button">Replay latest</button>
           <p id="rec-iq-status" class="status-line"></p>
+          <p id="capture-review-status" class="status-line"></p>
           <div id="rec-list" class="bm-list"></div>
         </section>
 
@@ -539,6 +546,7 @@
             <span class="cb-label">Step</span>
             <select id="step" title="tuning raster: wheel/arrow step size; click-to-tune snaps to it">
               <option value="">free</option>
+              <option value="1000">1 kHz</option>
               <option value="5000">5 kHz</option>
               <option value="6250">6.25 kHz</option>
               <option value="8333.333333">8.33 kHz</option>
@@ -560,6 +568,9 @@
               <option value="lsb">LSB</option>
               <option value="cw">CW</option>
             </select>
+          </div>
+          <div class="cb-item" id="cb-decode" hidden>
+            <label class="cb-check"><input id="sstv-decode" type="checkbox" /> Decode SSTV</label>
           </div>
           <div class="cb-item" id="cb-vol">
             <span class="cb-label">Vol</span>

@@ -26,6 +26,11 @@ async function openPictureMode(page, mode, height) {
     contentType: 'application/json',
     body: '[]',
   }));
+  await page.route('**/api/sessions', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ sessions: [] }),
+  }));
   await page.routeWebSocket('**/ws', (socket) => {
     socket.onMessage((payload) => {
       const command = JSON.parse(String(payload));
