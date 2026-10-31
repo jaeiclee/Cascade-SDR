@@ -479,8 +479,6 @@ sock.onJson((msg) => {
         cbDemod.hidden = !audioMode;
         cbDecode.hidden = !audioMode;
         cbSession.hidden = !(sstvLive || (msg.mode === "radio" && sstvDecode.checked));
-        // SSTV plays the channel too: without a squelch it hisses between
-        // transmissions. The squelch only gates the audio, not the decoder.
         const monitor = audioMode || sstvLive;
         cbVol.hidden = !monitor;
         cbSql.hidden = !monitor;
@@ -2790,7 +2788,6 @@ async function renderSessionReviews(): Promise<void> {
     }
     for (const session of sessions) sessionReviewList.append(makeSessionCard(session));
   } catch {
-    /* offline */
   }
 }
 
