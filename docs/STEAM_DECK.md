@@ -35,10 +35,10 @@ This guide installs the SteamOS Flatpak and adds it to Steam's Gaming Mode.
 
 The app opens fullscreen, selects SSTV, and starts on its ISS 70 cm preset at 437.550 MHz. Check the current ARISS event announcement before a pass. Use the frequency menu if the event specifies a different downlink.
 
-In SSTV mode, tune frequency, adjust gain, and toggle decoding from the live toolbar. Capture reviews save the IQ file, decoded image rows received during the capture, measured carrier-offset samples, and reception metadata for replay. Stop and save the review before changing reception settings or switching modes.
+In SSTV mode, tune frequency, adjust gain, and toggle decoding from the live toolbar. Use the D-pad to tune, A to toggle decoding, X to start or stop a capture, and Y to replay the latest recording. Save a reception preset to recall its frequency, gain, and bandwidth later. Capture reviews save the IQ file, decoded image rows received during the capture, measured carrier-offset samples, and reception metadata for replay. An interrupted capture draft is restored after reload, though image rows decoded before reload cannot be recovered. Stop and save the review before changing reception settings or switching modes.
 
 ## USB access and limits
 
 The Flatpak requests access to USB devices so `librtlsdr` can open the dongle. This grants access to USB devices generally, not only the RTL-SDR. Install bundles only from a source you trust. Flatpak 1.15.11 or newer is required for this permission.
 
-The package builds on GitHub Actions. This repository has not been tested on a Steam Deck, and the physical RTL-SDR connection and live SSTV reception remain unverified here.
+The package builds on GitHub Actions. The Steam Deck connection is available for controller testing. Live SSTV reception requires a connected RTL-SDR receiver.

@@ -364,6 +364,19 @@ function updateBandInfo(): void {
 
 let currentMode = "idle";
 let captureDraft: CaptureDraft | null = null;
+const captureRecoveryKey = "cascade-sdr.capture-draft.v1";
+try {
+  const saved = JSON.parse(localStorage.getItem(captureRecoveryKey) || "null");
+  if (saved?.metadata && Array.isArray(saved.doppler_samples) && typeof saved.started_at === "string") {
+    captureDraft = createCaptureDraft(saved.metadata, new Date(saved.started_at), performance.now());
+    captureDraft.doppler_samples = saved.doppler_samples;
+    captureDraft.last_sample_ms = null;
+  }
+} catch { localStorage.removeItem(captureRecoveryKey); }
+function persistCaptureDraft(): void {
+  if (captureDraft) localStorage.setItem(captureRecoveryKey, JSON.stringify(captureDraft));
+  else localStorage.removeItem(captureRecoveryKey);
+}
 let captureHasImageRows = false;
 let captureActionPending = false;
 let pendingCapturePayload: CapturePayload | null = null;
@@ -555,6 +568,7 @@ sock.onJson((msg) => {
     case "radio_level":
       if (captureDraft) {
         captureDraft = addDopplerSample(captureDraft, msg.afc ?? null, performance.now());
+        persistCaptureDraft();
       }
       if (msg.afc) {
         const hz = viewTuned + msg.afc.hz;     // the channel, in any mode
@@ -733,10 +747,12 @@ sock.onJson((msg) => {
         );
         pendingCapturePayload.sstv_mode = captureHasImageRows ? sstvImage.modeLabel() || null : null;
         captureDraft = null;
+        persistCaptureDraft();
         captureActionPending = false;
         void savePendingCapture();
       } else if (captureActionPending && !iqRecording && captureDraft) {
         captureDraft = null;
+        persistCaptureDraft();
         captureActionPending = false;
         captureReviewStatus.textContent = msg.message || "IQ recording did not start.";
       }
@@ -2501,6 +2517,7 @@ const recIqBtn = document.getElementById("rec-iq") as HTMLButtonElement;
 const recIqStatus = document.getElementById("rec-iq-status")!;
 const recList = document.getElementById("rec-list")!;
 let iqRecording = false;
+if (captureDraft) captureReviewStatus.textContent = "Recovered an interrupted capture draft. Stop the active IQ recording to save the review; image rows from before reload cannot be recovered.";
 
 const recordingLockedControls = [
   "#mode-tabs", "#freq-directory", "#bookmarks", "#overlay", "#freq", "#rate",
@@ -2597,11 +2614,99 @@ captureReviewButton.addEventListener("click", async () => {
   }
   captureHasImageRows = false;
   captureDraft = createCaptureDraft(currentCaptureMetadata(), new Date(), performance.now());
+  persistCaptureDraft();
   captureActionPending = true;
   captureReviewStatus.textContent = "Starting IQ capture and Doppler trace…";
   syncCaptureAction();
   sock.send({ cmd: "record", action: "start" });
 });
+
+const receptionPresetsKey = "cascade-sdr.sstv-presets.v1";
+const presetList = document.getElementById("sstv-preset-list") as HTMLSelectElement;
+const presetSave = document.getElementById("sstv-preset-save") as HTMLButtonElement;
+const presetLoad = document.getElementById("sstv-preset-load") as HTMLButtonElement;
+type ReceptionPreset = { name: string; frequency_hz: number; gain_db: number | "auto"; bandwidth_hz: number };
+function readReceptionPresets(): ReceptionPreset[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(receptionPresetsKey) || "[]");
+    return Array.isArray(value) ? value.filter((item): item is ReceptionPreset =>
+      item && typeof item.name === "string" && Number.isFinite(item.frequency_hz)
+      && Number.isFinite(item.bandwidth_hz) && (item.gain_db === "auto" || Number.isFinite(item.gain_db))) : [];
+  } catch { return []; }
+}
+function renderReceptionPresets(): void {
+  presetList.replaceChildren(...readReceptionPresets().map((preset, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = preset.name;
+    return option;
+  }));
+}
+presetSave.addEventListener("click", () => {
+  const presets = readReceptionPresets();
+  const frequency_hz = Math.round(viewTuned);
+  const name = `${(frequency_hz / 1e6).toFixed(4)} MHz`;
+  presets.push({ name, frequency_hz, gain_db: gainAuto.checked ? "auto" : desiredGainDb, bandwidth_hz: sstvBandwidthHz });
+  localStorage.setItem(receptionPresetsKey, JSON.stringify(presets));
+  renderReceptionPresets();
+  presetList.value = String(presets.length - 1);
+});
+presetLoad.addEventListener("click", () => {
+  const preset = readReceptionPresets()[Number(presetList.value)];
+  if (!preset) return;
+  sstvBandwidthHz = preset.bandwidth_hz;
+  if (preset.gain_db === "auto") gainAuto.checked = true;
+  else {
+    gainAuto.checked = false;
+    desiredGainDb = preset.gain_db;
+    const index = gainSteps.indexOf(preset.gain_db);
+    if (index >= 0) gainSlider.value = String(index);
+  }
+  gainAuto.dispatchEvent(new Event("change", { bubbles: true }));
+  tuneSstvAt(preset.frequency_hz);
+});
+renderReceptionPresets();
+
+const gamepadButtons = new Map<number, boolean[]>();
+let gamepadTuneAt = 0;
+function handleDeckShortcut(code: string): void {
+  if (code === "ArrowLeft" || code === "ArrowRight") {
+    if (currentMode !== "sstv" || captureDraft) return;
+    const direction = code === "ArrowLeft" ? -1 : 1;
+    const step = Math.max(1, Number(stepSel.value) || 1000);
+    tuneSstvAt(Math.round(viewTuned / step + direction) * step);
+  } else if (code === "KeyA") sstvDecode.click();
+  else if (code === "KeyX") captureReviewButton.click();
+  else if (code === "KeyY") replayLatestButton.click();
+}
+document.addEventListener("keydown", (event) => {
+  if (event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+  if (["ArrowLeft", "ArrowRight", "KeyA", "KeyX", "KeyY"].includes(event.code)) {
+    event.preventDefault();
+    handleDeckShortcut(event.code);
+  }
+});
+window.addEventListener("gamepadconnected", () => { captureReviewStatus.textContent = "Controller connected. D-pad tunes, A toggles decode, X captures, Y replays."; });
+function pollGamepad(): void {
+  const pad = navigator.getGamepads?.().find((item) => item !== null);
+  if (pad) {
+    const previous = gamepadButtons.get(pad.index) || [];
+    const pressed = (index: number) => Boolean(pad.buttons[index]?.pressed);
+    const edge = (index: number) => pressed(index) && !previous[index];
+    if (edge(0)) handleDeckShortcut("KeyA");
+    if (edge(2)) handleDeckShortcut("KeyX");
+    if (edge(3)) handleDeckShortcut("KeyY");
+    const now = performance.now();
+    const direction = pressed(14) || pad.axes[0] < -0.7 ? -1 : pressed(15) || pad.axes[0] > 0.7 ? 1 : 0;
+    if (direction && now >= gamepadTuneAt && currentMode === "sstv" && !captureDraft) {
+      handleDeckShortcut(direction < 0 ? "ArrowLeft" : "ArrowRight");
+      gamepadTuneAt = now + 250;
+    }
+    gamepadButtons.set(pad.index, pad.buttons.map((button) => button.pressed));
+  }
+  requestAnimationFrame(pollGamepad);
+}
+requestAnimationFrame(pollGamepad);
 
 recIqBtn.addEventListener("click", () => {
   if (captureActionPending) return;
