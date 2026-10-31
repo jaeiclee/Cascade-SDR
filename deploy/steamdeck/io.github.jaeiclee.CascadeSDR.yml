@@ -1,0 +1,67 @@
+app-id: io.github.jaeiclee.CascadeSDR
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: cascade-sdr
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --device=usb
+  - --filesystem=xdg-download
+modules:
+  - name: libusb
+    buildsystem: simple
+    build-commands:
+      - ./bootstrap.sh
+      - ./configure --prefix=/app --disable-udev
+      - make -j${FLATPAK_BUILDER_N_JOBS}
+      - make install
+    sources:
+      - type: git
+        url: https://github.com/libusb/libusb.git
+        tag: v1.0.29
+        commit: 15a7ebb4d426c5ce196684347d2b7cafad862626
+  - name: rtl-sdr
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_INSTALL_PREFIX=/app
+      - -DLIB_INSTALL_DIR=lib
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      - -DINSTALL_UDEV_RULES=OFF
+      - -DDETACH_KERNEL_DRIVER=ON
+    build-options:
+      env:
+        LD_LIBRARY_PATH: /app/lib
+        PKG_CONFIG_PATH: /app/lib/pkgconfig
+    sources:
+      - type: git
+        url: https://github.com/osmocom/rtl-sdr.git
+        commit: 1f0eafe60445339703903af6d8814ffab7e73784
+  - name: cascade-sdr
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - python3 -m pip install --prefix=/app --no-cache-dir --no-warn-script-location -r backend/requirements.txt -r backend/requirements-desktop.txt
+      - install -d /app/share/cascade-sdr/backend /app/share/cascade-sdr/frontend/dist
+      - cp -a backend/app /app/share/cascade-sdr/backend/
+      - cp -a frontend/dist/. /app/share/cascade-sdr/frontend/dist/
+      - sh deploy/steamdeck/smoke-test.sh
+      - install -Dm755 deploy/steamdeck/cascade-sdr /app/bin/cascade-sdr
+      - install -Dm644 deploy/steamdeck/io.github.jaeiclee.CascadeSDR.desktop /app/share/applications/io.github.jaeiclee.CascadeSDR.desktop
+      - install -Dm644 deploy/steamdeck/io.github.jaeiclee.CascadeSDR.metainfo.xml /app/share/metainfo/io.github.jaeiclee.CascadeSDR.metainfo.xml
+      - install -Dm644 frontend/public/favicon.svg /app/share/icons/hicolor/scalable/apps/io.github.jaeiclee.CascadeSDR.svg
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - .hermes
+          - frontend/node_modules
+          - backend/.venv
+          - backend/__pycache__

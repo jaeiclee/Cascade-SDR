@@ -1,0 +1,40 @@
+name: Steam Deck Flatpak
+
+on:
+  push:
+    branches: [main, steam-deck]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-flatpak:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Test and build the frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+          npm audit
+      - name: Test launch-profile routing
+        run: |
+          PYTHONPATH=backend python3 -m unittest discover -s backend/tests -p 'test_launch_profile.py' -v
+          PYTHONPATH=backend python3 -m unittest discover -s backend/tests -p 'test_ais_cache_path.py' -v
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: deploy/steamdeck/io.github.jaeiclee.CascadeSDR.yml
+          bundle: cascade-sdr.flatpak
+          artifact-name: cascade-sdr-steam-deck

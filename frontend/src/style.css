@@ -287,9 +287,7 @@ details.vfo-box[open] > summary::before { content: "▾ "; }
 
 .zoom-out {
   position: absolute;
-  /* just below the scope (26% of the view above the 22 px axis), so it never
-     covers the scope's noise readout — the short waterfall strip above an
-     SSTV/APT picture put that readout right where the button was */
+  /* Keep the button below the scope's noise readout. */
   top: calc((100% - 22px) * 0.26 + 6px);
   right: 0.6rem;
   z-index: 5;
@@ -302,6 +300,7 @@ details.vfo-box[open] > summary::before { content: "▾ "; }
   cursor: pointer;
 }
 .zoom-out:hover { border-color: var(--accent); }
+.fft-view.compact .zoom-out { top: calc((100% - 22px) * 0.35 + 6px); }
 .fft-view {
   position: relative;
   flex: 1 1 auto;
@@ -313,8 +312,32 @@ details.vfo-box[open] > summary::before { content: "▾ "; }
    anything is on frequency (and where Doppler has walked it) before the
    decoder has a line to show. */
 .fft-view.compact {
-  flex: 0 0 34%;
+  flex: 0 0 43%;
   margin-bottom: 0.6rem;
+}
+.fft-view.compact #scope { flex-basis: 35%; }
+/* In short landscape windows, put the graphs and decoded picture side by side
+   so both keep useful vertical space. */
+@media (max-height: 640px) and (min-width: 761px) {
+  .display.picture-mode {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 0.6rem;
+  }
+  .display.picture-mode > .control-bar { grid-column: 1 / -1; }
+  .display.picture-mode > .fft-view.compact {
+    grid-column: 1;
+    grid-row: 2;
+    flex: 1 1 auto;
+    margin-bottom: 0;
+  }
+  .display.picture-mode > #apt-view,
+  .display.picture-mode > #sstv-view {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+  }
 }
 .wf-wrap {
   position: relative;
@@ -834,3 +857,37 @@ details.vfo-box[open] > summary::before { content: "▾ "; }
 .replay-time { margin: 0; font-variant-numeric: tabular-nums; color: var(--muted, #8b949e); font-size: 0.85em; }
 .replay-buttons { display: flex; gap: 0.3rem; }
 .replay-buttons button { flex: 1 1 0; padding-left: 0; padding-right: 0; }
+.session-review-list { display: grid; gap: 0.65rem; }
+.session-card { display: grid; gap: 0.45rem; padding: 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.session-card p { margin: 0; }
+.session-tracking { color: var(--muted); font-size: 0.82rem; }
+.session-trace { width: 100%; height: 64px; overflow: visible; background: color-mix(in srgb, var(--panel) 70%, transparent); border-radius: 5px; }
+.session-trace circle { fill: var(--accent); stroke: var(--panel); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.session-card details p { margin-top: 0.4rem; line-height: 1.5; }
+.session-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.session-actions a { color: var(--accent); padding: 0.35rem; }
+.session-image { display: block; width: min(100%, 480px); max-height: 300px; object-fit: contain; background: #000; }
+
+body.steam-deck { --sidebar-w: 320px; }
+body.steam-deck button { min-height: 44px; font-size: 0.95rem; }
+body.steam-deck .mode-row { gap: 0.45rem; }
+body.steam-deck .modes button { min-height: 48px; padding: 0.6rem; }
+body.steam-deck .group { gap: 0.65rem; padding: 0.9rem; }
+body.steam-deck .group label { font-size: 0.9rem; }
+body.steam-deck .group input:not([type="range"]),
+body.steam-deck .group select { min-height: 48px; font-size: 1rem; }
+body.steam-deck .group label.check input { min-width: 22px; min-height: 22px; }
+body.steam-deck .control-bar input:not([type="range"]):not([type="checkbox"]),
+body.steam-deck .control-bar select,
+body.steam-deck .control-bar button { min-height: 48px; font-size: 1rem; }
+body.steam-deck .control-bar button { padding: 0.5rem 0.7rem; }
+body.steam-deck .control-bar .cb-check { min-height: 48px; }
+body.steam-deck .control-bar .cb-check input { min-width: 22px; min-height: 22px; }
+body.steam-deck .control-bar input[type="range"] { min-height: 48px; width: 140px; }
+body.steam-deck .fft-view.compact { flex-basis: 39.5%; }
+body.steam-deck .fft-view.compact #scope { flex-basis: 37%; }
+body.steam-deck .fft-view.compact .zoom-out { top: calc((100% - 22px) * 0.37); }
+body.steam-deck .session-actions button,
+body.steam-deck .session-actions a,
+body.steam-deck #capture-review,
+body.steam-deck #replay-latest { min-height: 48px; display: inline-flex; align-items: center; }

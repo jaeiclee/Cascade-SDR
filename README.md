@@ -10,8 +10,8 @@ waterfall, audio and maps. The two talk over a WebSocket.
 
 ![Cascade SDR — the Radio view: live waterfall + scope with click-to-listen](docs/radio.png)
 
-📖 **New here? See the [User Guide](docs/GUIDE.md)** — how to use every mode, plus
-things to try. Status:
+📖 **New here? See the [User Guide](docs/GUIDE.md)** for each mode and things to try.
+See [Run Cascade SDR on Steam Deck](docs/STEAM_DECK.md) for SteamOS installation.
 
 | Mode | What it does | Status |
 |------|--------------|--------|

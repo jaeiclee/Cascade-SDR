@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -29,7 +30,8 @@ STALE_SECONDS = 600.0  # vessels report slowly (anchored/Class B); keep them a w
 # Persistent name/note cache. Ship names ride in static messages sent only every
 # ~6 min, so each session would otherwise start blank; caching MMSI -> name (and
 # a user note) lets known vessels show their name the instant they're heard again.
-CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "ais_cache.json"
+CACHE_PATH = Path(os.environ.get("AIS_CACHE_PATH")
+                  or Path(__file__).resolve().parents[2] / "data" / "ais_cache.json")
 CACHE_FLUSH_SECONDS = 15.0           # coalesce disk writes; flush at most this often
 # Permanent ship attributes worth remembering between sessions (not voyage data
 # like draught/destination/ETA, which change every trip).

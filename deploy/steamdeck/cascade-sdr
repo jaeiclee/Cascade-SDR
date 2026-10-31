@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}/cascade-sdr"
+mkdir -p "$data_home/recordings" "$data_home/satellite"
+
+export PYTHONPATH="/app/share/cascade-sdr/backend:/app/lib/python${python_version}/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+export LD_LIBRARY_PATH="/app/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export CASCADE_LAUNCH_PROFILE=steam-deck-iss
+export CASCADE_RECORDINGS_DIR="$data_home/recordings"
+export CASCADE_SATELLITE_DIR="$data_home/satellite"
+export SCANNER_CACHE_PATH="$data_home/scanner_custom.json"
+export AIS_CACHE_PATH="$data_home/ais_cache.json"
+export ISM_CACHE_PATH="$data_home/ism_cache.json"
+
+exec python3 -m app.desktop
